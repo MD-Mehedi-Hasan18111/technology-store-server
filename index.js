@@ -6,6 +6,7 @@ const { MongoClient, ObjectId } = require("mongodb");
 const res = require("express/lib/response");
 const fileUpload = require('express-fileupload');
 const port = process.env.PORT || 5000;
+const stripe = require('stripe')(process.env.STRIPE_SECRET);
 
 app.use(cors());
 app.use(express.json({limit: '250mb'}));
@@ -149,8 +150,14 @@ async function run() {
           
           const result = await productsCollection.insertOne(product);
           res.send(result);
-
       })
+
+    app.get('/order/:id', async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: ObjectId(id) };
+      const result = await ordersCollection.findOne(query);
+      res.send(result);
+    })
 
     // make an admin
     app.put("/users/:email", async (req, res) => {
@@ -166,6 +173,31 @@ async function run() {
         res.send(result);
       }
     });
+
+    app.post('/create-payment-intent', async (req, res) => {
+      const paymentInfo = req.body;
+      const amount = +paymentInfo.price * 100;
+      const paymentIntent = await stripe.paymentIntents.create({
+        currency: 'usd',
+        amount: amount,
+        payment_method_types: ['card']
+      });
+      res.json({ clientSecret: paymentIntent.client_secret });
+    })
+
+    app.put('/payments/:id', async (req, res) => {
+      const id = req.params.id;
+      const payment = req.body;
+      const filter = { _id: ObjectId(id) };
+      const updateDoc = {
+        $set: {
+          payment: payment
+        }
+      };
+      const result = await ordersCollection.updateOne(filter, updateDoc);
+      res.send(result);
+    })
+
   } finally {
     // await client.close();
   }
